@@ -1,8 +1,11 @@
 """RPC without complications."""
 
+from inspect import getargspec
 from json import loads, dumps
 from attr import attrs, attrib, Factory
 from autobahn.twisted.websocket import WebSocketServerProtocol
+
+reserved_names = ('_return', '_error', '_commands')
 
 
 @attrs
@@ -34,6 +37,10 @@ class WSProtocol(WebSocketServerProtocol):
         self.id = 0
         self.waiters = {}
 
+    def onOpen(self):
+        """Socket is open. Send all supported commands."""
+        self.do_commands()
+
     def onMessage(self, payload, binary=False):
         """Decode the data into [name, args, kwargs, id], and look for a
         command with the given name. If a command is found it will be called
@@ -47,10 +54,12 @@ class WSProtocol(WebSocketServerProtocol):
 
     def handle_command(self, name, args, kwargs, rid):
         """Handle a command."""
-        if name in ('return', 'error'):
-            if rid in self.waiters:
+        if name in reserved_names:
+            if name == '_commands':
+                self.do_commands()
+            elif rid in self.waiters:
                 w = self.waiters[rid]
-                func = getattr(w, 'on_%s' % name)
+                func = getattr(w, 'on%s' % name)
                 if func is not None:
                     func(*args, **kwargs)
             else:
@@ -58,28 +67,32 @@ class WSProtocol(WebSocketServerProtocol):
                     '%s value for invalid ID %r.' % (name.title(), rid)
                 )
         elif name in self.rpc_container.commands:
+            func = self.rpc_container.commands[name]
             try:
-                func = self.rpc_container.commands[name]
                 value = func(*args, **kwargs)
                 self.do_return(rid, value)
             except Exception as e:
                 self.do_error(rid, e)
-                raise e
         else:
             raise RuntimeError('Invalid command name %r.' % name)
 
     def send_command(self, name, *args, **kwargs):
         """Send a command with args and kwargs."""
         data = dumps(dict(name=name, args=args, kwargs=kwargs))
-        self.send(data)
+        self.sendMessage(data.encode())
 
     def do_return(self, rid, value):
         """Send a return value."""
-        self.send_command('return', rid, value)
+        self.send_command('_return', rid, value)
 
     def do_error(self, rid, e):
         """Send an error back to a call."""
-        self.send_command('error', rid, str(e))
+        value = str(e)
+        self.send_command('_error', rid, value)
+
+    def do_commands(self):
+        """Send a list of command names to the client."""
+        self.send_command('_commands', self.rpc_container.get_commands())
 
     def call(self, name, *args, **kwargs):
         """Call a javascript function. Returns a Waiter instance which can be
@@ -104,8 +117,14 @@ class SimpleRPCContainer:
 
     def register(self, func):
         """Register a function so that it can be called from JavaScript."""
-        self.commands[func.__name__] = func
+        name = func.__name__
+        if name in reserved_names:
+            raise NameError('Name %r is invalid: %r.' % (name, reserved_names))
+        self.commands[name] = func
 
     def get_commands(self):
         """Returns a list of function names that JavaScript can call."""
-        return list(self.commands.keys())
+        commands = []
+        for name, func in self.commands.items():
+            commands.append([name, getargspec(func).args])
+        return commands
