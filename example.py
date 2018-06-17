@@ -4,10 +4,10 @@ from os.path import getmtime
 import os.path
 from autobahn.twisted.websocket import WebSocketServerFactory, listenWS
 from klein import Klein
-from simplerpc import SimpleRPCContainer
+from simple_rpc import SimpleRPCContainer
 
 app = Klein()
-js_file = os.path.join('simplerpc', 'simplerpc.js')
+js_file = os.path.join('simple_rpc', 'simple_rpc.js')
 timestamp = getmtime(js_file)
 with open(js_file, 'r') as f:
     js_code = f.read()
