@@ -69,7 +69,7 @@ c = SimpleRPCContainer()
 
 
 @c.register
-def alert(text):
+def alert(con, text):
     """Handle text."""
     if text:
         return f'I received: {text}'
@@ -77,7 +77,7 @@ def alert(text):
 
 
 @c.register
-def problem():
+def problem(con):
     raise Exception('That was an error.')
 
 

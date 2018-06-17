@@ -69,7 +69,7 @@ class WSProtocol(WebSocketServerProtocol):
         elif name in self.rpc_container.commands:
             func = self.rpc_container.commands[name]
             try:
-                value = func(*args, **kwargs)
+                value = func(self, *args, **kwargs)
                 self.do_return(rid, value)
             except Exception as e:
                 self.do_error(rid, e)
